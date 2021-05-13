@@ -1,0 +1,136 @@
+
+VIAVI_PLATFORM_URL = "git@gitlab.ds.jdsu.net:instrument-platform/viavi-platform.git"
+
+//node('docker && viavi-platform') {
+node('vad63799') {
+    try {
+        stage("Checkout") {
+            checkoutPSC()
+            checkoutAndMergeVP()
+        }
+
+        stage("Update Submodules") {
+            //setup env and update submodules
+            sh 'chmod +x source-and-update-submodules.sh; ./source-and-update-submodules.sh'
+
+            if (repo_url != VIAVI_PLATFORM_URL) {
+                mergeSubmodule()
+            }
+        }
+
+        withDockerRegistry(credentialsId: 'docker-platform-container', url: 'https://registry.gitlab.ds.jdsu.net') {
+            docker.image("registry.gitlab.ds.jdsu.net/instrument-platform/docker-platform-service:bionic").inside('-u root:root') {
+                sh "mkdir build"
+                sh "mkdir logs"
+                stage("Build") {
+                    cmake = sh(script: "cd build && cmake .. -DBUILD_ENV=PS_NATIVE > ../logs/cmake_native.log", returnStdout:true)
+                    println(cmake)
+                    make = sh(script:"cd build && make -j8 > ../logs/make.log && make install > ../logs/make_install.log", returnStdout:true)
+                    println(make)
+                }
+
+                stage("Unit Test") {
+                    try {
+                        ctest = sh(script:"cd build && ctest -T Test --no-compress-output", returnStdout:true)
+                        println(ctest)
+                    } catch(err) {
+                        println("Unit tests failed.")
+                        println(err)
+                        throw err
+                    } finally {
+                        publishTestResults()
+                    }
+                }
+            }
+        }
+    } catch(err) {
+        println(err)
+    }
+}
+
+def checkoutPSC() {
+    git changelog: false, credentialsId: 'jenkins-mege-username-ssh-key', poll: false, url: 'git@gitlab.ds.jdsu.net:instrument-platform/platform-services-container.git', branch: 'integrate-to-jenkins'
+    sh 'sudo rm -rf build; sudo rm -rf logs; sudo rm -rf viavi-platform'
+    sh 'git clean -fdx'
+    sh 'git checkout integrate-to-jenkins'
+    sh 'git submodule foreach --recursive git reset --hard'
+    sh 'git submodule update --init --recursive'
+}
+
+def checkoutAndMergeVP() {
+    dir('viavi-platform') {
+        sh 'rm -rf'
+        git changelog: false, poll: false, url: 'git@gitlab.ds.jdsu.net:instrument-platform/viavi-platform.git', credentialsId: 'jenkins-mege-username-ssh-key', branch: "develop"
+
+        if (repo_url == VIAVI_PLATFORM_URL) {
+            merge()
+        }
+
+        sh 'git submodule foreach --recursive git reset --hard'
+        sh 'git submodule update --init --recursive'
+    }
+}
+
+def mergeSubmodule() {
+    submodule_name = sh(returnStdout:true, script "git config --file .gitmodules --get-regex url | grep ${repo_url} | cut -f2 -d'.'")
+    submodule_path = sh(returnStdout:true, script "git config --file .gitmodules --get-regex path | grep ${submodule_name} |  awk '{ print $2; }'")
+
+    dir(submodule_path) {
+        merge()
+    }
+}
+
+def merge() {
+    sh 'git config user.name mts-jenkins'
+    sh 'git config user.email mts-jenkins@viavisolutions.com'
+    sh 'git config core.longpaths true'
+
+    sourceCommitSha = getCommitSha(source_branch)
+    targetCommitSha = getCommitSha(target_branch)
+
+    sh 'git fetch'
+    sh "git checkout -B source ${sourceCommitSha}"
+    sh "git checkout -B target ${targetCommitSha}"
+
+    try{
+        sh 'git merge source'
+    }catch(err){
+        print "Git merge failed: ${err}"
+        sh 'git merge --abort'
+        currentBuild.result = 'FAILURE'
+        throw err
+    }
+}
+
+def getCommitSha(branchName) {
+    return sh(returnStdout: true, script: "git rev-parse origin/${branchName}").trim()
+}
+
+def publishTestResults() {
+    step([
+        $class: 'XUnitPublisher',
+        testTimeMargin: '3000',
+        thresholdMode: 1,
+        thresholds: [[
+            $class: 'FailedThreshold',
+            failureNewThreshold: '1',
+            failureThreshold: '1',
+            unstableNewThreshold: '0',
+            unstableThreshold: '0']],
+
+        tools: [[
+            $class: 'CTestType',
+            deleteOutputFiles: true,
+            failIfNotNew: true,
+            pattern: 'build/Testing/*/Test.xml',
+            skipNoTestFiles: true,
+            stopProcessingIfError: true]
+        ]
+    ])
+}
+
+def sendEmail(subject, body, mailList){
+    emailext body: "${body} <br>Go to <a href=\"http://mts-jenkins.ds.jdsu.net/job/fpga-unit-test/\">fpga-unit-test</a> for results and details.",
+    subject: "FPGA Unit-Test Build ${BUILD_NUMBER}: ${subject}",
+    to: mailList
+}

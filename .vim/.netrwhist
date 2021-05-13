@@ -1,0 +1,8 @@
+let g:netrw_dirhistmax  =10
+let g:netrw_dirhist_cnt =6
+let g:netrw_dirhist_1='/home/vad63799/working-copy/jenkins-scripts/src/main/groovy'
+let g:netrw_dirhist_2='/home/vad63799/working-copy/jenkins-scripts/src/main/groovy/com'
+let g:netrw_dirhist_3='/home/vad63799/working-copy/jenkins-scripts/src/main/groovy/com/viavisolutions'
+let g:netrw_dirhist_4='/home/vad63799/working-copy/jenkins-scripts/src/main/groovy/com/viavisolutions/mts'
+let g:netrw_dirhist_5='/home/vad63799/working-copy/jenkins-scripts/test-mts-jenkins'
+let g:netrw_dirhist_6='/home/vad63799/working-copy/jenkins-scripts'

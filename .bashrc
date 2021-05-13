@@ -43,7 +43,7 @@ esac
 # uncomment for a colored prompt, if the terminal has the capability; turned
 # off by default to not distract the user: the focus in a terminal window
 # should be on the output of commands, not on the prompt
-#force_color_prompt=yes
+force_color_prompt=yes
 
 if [ -n "$force_color_prompt" ]; then
     if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
@@ -120,4 +120,14 @@ source ~/working-copy/test-farm/test-farm/util/toys/test-farm-helpers
 
 alias clearcache='sync; echo 3 | sudo tee /proc/sys/vm/drop_caches'
 
+source ~/.bash_profile
+#source ~/.profile
 
+function httpserver () {
+    local port=${1:-8081}
+    local hostname=`hostname`
+    echo "Starting http server at http://${hostname}:${port}"
+    python -m SimpleHTTPServer ${port}
+}
+
+[ -f ~/.fzf.bash ] && source ~/.fzf.bash
